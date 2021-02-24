@@ -1,38 +1,27 @@
 const inquirer = require('inquirer');
 const mysql = require('mysql');
-const consoleTable = require('console.table');
+require('console.table');
+require('dotenv').config();
 
 const connection = mysql.createConnection({
   host: "localhost",
   port: 3306,
   user: "root",
-  password: '9canadian',
+  password: process.env.DBPASSWORD,
   database: "employeeDB"
 });
 
 connection.connect(err => {
   if (err) throw err;
   console.log('Connection successful!\n----------------------------------\nWELCOME TO EMPLOYEE TRACKER\n----------------------------------\n');
-  mainMenu();
+  displayMainMenu();
 })
 
-const mainMenu = () => {
-  inquirer.prompt([
-    {
-      type: 'list',
-      message: 'What would you like to do?',
-      name: 'actionInput',
-      choices: [
-        'View All Employees',
-        'View All Departments',
-        'View All Roles',
-        'Add Employee',
-        'Add Department',
-        'Add Role',
-        'Update Employee Role'
-      ]
-    }
-  ]).then((answer) => {
+function displayMainMenu() {
+  inquirer
+  .prompt(mainMenu)
+  .then(function(answer) {
+  
     switch (answer.actionInput) {
       case 'View All Employees':
         viewAllEmp();
@@ -55,127 +44,205 @@ const mainMenu = () => {
       case 'Update Employee Role':
         updateEmpRole();
         break;
+      case 'Quit':
+        connection.end();
+        break;
     }
-
-  })
+  });
 }
 
+// view all employees
 const viewAllEmp = () => {
-  console.log('view all employees');
-
-  mainMenu();
+  connection.query('SELECT * FROM employee', (err, res) => {
+    if (err) throw err;
+    if (res.length === 0) {
+      console.log('\nThere are no employees added yet.\n');
+      displayMainMenu();
+    } else {
+      console.log('\nEmployees retrieved from database\n');
+      console.table(res);
+      displayMainMenu();
+    }
+  });
 }
-
+// view all departments
 const viewAllDept = () => {
-  console.log('view all departments');
+  connection.query('SELECT * FROM department', (err, res) => {
+    if (err) throw err;
+    if (res.length === 0) {
+      console.log('\nThere are no departments added yet.\n');
+      displayMainMenu();
+    } else {
+      console.log('\nDepartments retrieved from database\n');
+      console.table(res);
+      displayMainMenu();
+    }
+  });
 
-
-  mainMenu();
 }
-
+// view all roles
 const viewAllRoles = () => {
-  console.log('view all roles');
-
-
-  mainMenu();
+  connection.query('SELECT * FROM role', (err, res) => {
+    if (err) throw err;
+    if (res.length === 0) {
+      console.log('\nNo Roles have been added yet.\n');
+      displayMainMenu();
+    } else {
+      console.log('\nRoles retrieved from database\n');
+      console.table(res);
+      displayMainMenu();
+    }
+  });
 }
 
-const addEmp = () => {
-  console.log('add employee');
-  /*
-  inquirer
-  .prompt(addEmpQuestions)
-  .then(answers => {
-    connection.query(
-      'INSERT INTO employee SET ?', {
-        first_name: answers.firstName,
-        last_name: answers.lastName,
-        role_id: null,
-        manager_id: null
-      }, (err, res) => {
-        if (err) throw err;
-      }
-    );
-  }); */
-
-  mainMenu();
-}
-
-const addDept = () => {
-  console.log('add department');
+// add to department table
+function addDept() {
   inquirer
   .prompt(addDeptQuestions)
-  .then(answer => {
+  .then(function(answer) {
     connection.query(
       'INSERT INTO department SET ?', {
         name: answer.deptName
-      }, (err, res) => {
+      }, function(err, res) {
         if (err) throw err;
+        console.log('\nDepartment added\n');
+        viewAllDept();
+        displayMainMenu();
+        
       }
     );
   });
-  mainMenu();
+  
 }
 
-const addRole = () => {
-  console.log('add role');
+// add to role table
+function addRole() {
+  connection.query('SELECT * FROM department', function(err, res) {
+    inquirer
+    .prompt([
+    {
+      type: 'input',
+      message: "\nPlease enter job title:",
+      name: 'roleName'
+    },
+    {
+      type: 'input',
+      message: '\nPlease enter salary of role:',
+      name: 'salary'
+    },
+    {
+      type: 'list',
+      message: "\nPlease select department this role falls under:",
+      choices: function() {
+        var choicesArr = [];
+        res.forEach(dpt => {
+          choicesArr.push(dpt.name);
+        })
+        return choicesArr;
+      },
+      name: 'roleDept'
+    }
+    ]).then(answer => {
+      const dept = answer.roleDept;
+      connection.query('SELECT * FROM department', function(err, res) {
+        if (err) throw err;
+        let filteredDept = res.filter(function(res) {
+          return res.name == dept;
+        })
 
-  mainMenu();
+        let id = filteredDept[0].id;
+        let query = 'INSERT INTO role (title, salary, department_id) VALUES (?, ?, ?)';
+        let values = [answer.roleName, parseInt(answer.salary), id];
+        console.log(values);
+        connection.query(query, values, function(err, res, fields) {
+          if (err) throw err;
+          console.table(res);
+        })
+      }) 
+    });
+  })
+  displayMainMenu();
 }
 
+// add to employee table
+// 
+async function addEmp() {
+  connection.query('SELECT * FROM role', function(err, res) {
+    if (err) throw err;
+    inquirer.
+      prompt([
+        {
+        type: 'input',
+        message: "\nEnter employee's first name:",
+        name: 'firstName'
+        }, {
+        type: 'input',
+        message: "\nEnter employee's last name:",
+        name: 'lastName'
+        }, {
+        type: 'list',
+        message: '\nSelect role of the employee',
+        name: 'empRole',
+        choices: function() {
+          const rolesArr = [];
+          res.forEach(role => {
+            rolesArr.push(role.title);
+          })
+          return rolesArr;
+        }
+      }
+    ])
+      .then(function(answer) {
+        console.log(answer);
+        const role = answer.empRole;
+        connection.query('SELECT * FROM role', function(err, res) {
+          if (err) throw err;
+          let getId = res.filter(function(res) {
+            return res.title = role;
+          })
+          let roleId = getId[0].id;
+
+          let query = 'INSERT INTO employee (first_name, last_name, role_id) VALUES (?, ?, ?)';
+          let vals = [answer.firstName, answer.lastName, roleId];
+          console.log(values);
+          connection.query(query, vals, function(err, res, fields) {
+            if (err) throw err;
+            console.log('\nEmployee added');
+          });
+          viewAllEmp();
+        })
+      })
+  })
+  displayMainMenu();
+}
+
+/*
 const updateEmpRole = () => {
   console.log('update employee role');
 
-  mainMenu();
-}
+  displayMainMenu();
+} */
 
-const addDeptQuestions = [{
-  type: 'input',
-  message: 'Please enter department name:',
-  name: 'deptName'
-}];
-
-const addEmpQuestions = [{
-    type: 'input',
-    message: "Please enter employee's first name:",
-    name: 'firstName'
-  },
-  {
-    type: 'input',
-    message: "Please enter employee's last name:",
-    name: 'lastName'
-  },
+const mainMenu = [
   {
     type: 'list',
-    message: "Please enter employee's role:",
-    choices: ['something', 'some other thing'],//roleChoices,
-    name: 'empRole'
+    message: '\nWhat would you like to do?',
+    name: 'actionInput',
+    choices: [
+      'View All Employees',
+      'View All Departments',
+      'View All Roles',
+      'Add Employee',
+      'Add Department',
+      'Add Role',
+      'Update Employee Role',
+      'Quit'
+    ]
   }
 ];
 
-const addRoleQuestions = [{
+const addDeptQuestions = [{
   type: 'input',
-  message: "Please enter job title:",
-  name: 'roleName'
-},
-{
-  type: 'input',
-  message: 'Please enter salary of role:',
-  name: 'salary'
-},
-{
-  type: 'input',
-  message: "Please enter role's department ID: ",
-  name: 'roleDept'
-}
-];
-
-
-/*
-const validateString = async input => {
-
-}
-
-const validateNumber = async input => {
-
-} */
+  message: '\nPlease enter department name:',
+  name: 'deptName'
+}];
